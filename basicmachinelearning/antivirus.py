@@ -119,6 +119,12 @@ if files_info:
     # Create DataFrame
     df = pd.DataFrame(files_info)
 
+    # Extract 'FilePath' column
+    file_paths = df['FilePath']
+
+    # Drop 'FilePath' column
+    df.drop(columns=['FilePath'], inplace=True)
+
     # Drop NaN values
     df.dropna(inplace=True)
 
@@ -130,14 +136,9 @@ if files_info:
         except ValueError:
             df.drop(columns=[col], inplace=True)
 
-    if 'FilePath' in df.columns:  # Check if 'FilePath' column exists
-        # Predict using the model
-        predictions = model.predict(df.drop(columns=['FilePath']))  # Remove FilePath from features
+    # Predict using the model
+    predictions = model.predict(df)
 
-        # Display predictions
-        for file_path, prediction in zip(df['FilePath'], predictions):
-            print(f"File: {file_path}, Prediction: {'Malicious' if prediction == 1 else 'Benign'}")
-    else:
-        print("No 'FilePath' column found in the DataFrame.")
-else:
-    print("No files found in the specified folder.")
+    # Display predictions
+    for file_path, prediction in zip(file_paths, predictions):
+        print(f"File: {file_path}, Prediction: {'Malicious' if prediction == 1 else 'Benign'}")
