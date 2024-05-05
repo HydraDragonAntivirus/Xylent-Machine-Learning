@@ -87,8 +87,11 @@ def check_signature(file_path):
     except Exception as e:
         print(f"An error occurred while checking signature for {file_path}: {e}")
         return 'NotSigned'
-def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, threshold=0.76):
+def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, benign_numeric_features, threshold=0.76):
     """Scan a folder for malicious activity"""
+    total_files_scanned = 0
+    malicious_files_detected = 0
+
     try:
         print(f"Scanning folder: {folder_path}")
 
@@ -120,62 +123,90 @@ def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, t
                         malware_rank = None
                         malware_definition = "Benign"  # Default
 
-                        nearest_similarity = 0
+                        nearest_malicious_similarity = 0
+                        nearest_benign_similarity = 0
 
-                        for features, info in zip(malicious_numeric_features, malicious_file_names):
+                        for malicious_features, info in zip(malicious_numeric_features, malicious_file_names):
                             rank = info['numeric_tag']
                             definition = info.get('malware_definition', "Unknown")
-                            similarity = calculate_similarity(file_numeric_features, features)
-                            if similarity > nearest_similarity:
-                                nearest_similarity = similarity
+                            similarity = calculate_similarity(file_numeric_features, malicious_features)
+                            if similarity > nearest_malicious_similarity:
+                                nearest_malicious_similarity = similarity
                             if similarity >= threshold:
                                 is_malicious = True
                                 malware_rank = rank
                                 malware_definition = info['file_name']
                                 break
 
-                        print(f"File: {file_path}")
+                        for benign_features in benign_numeric_features:
+                            similarity = calculate_similarity(file_numeric_features, benign_features)
+                            if similarity > nearest_benign_similarity:
+                                nearest_benign_similarity = similarity
+
+                        total_files_scanned += 1
                         if is_malicious:
-                            print("Malicious activity detected.")
-                            print("Malware Rank:", malware_rank)
-                            print("Malware Name:", malware_definition)
+                            malicious_files_detected += 1
+                            if nearest_benign_similarity >= 0.76:
+                                print("Flagged as malicious but more similar to benign features. Marking as clean.")
+                                print("Nearest malicious similarity:", nearest_malicious_similarity)
+                                print("Nearest benign similarity:", nearest_benign_similarity)
+                                print("Clean file.")
+                            else:
+                                if nearest_malicious_similarity >= threshold:
+                                    print("Malicious activity detected.")
+                                    print("Malware Rank:", malware_rank)
+                                    print("Malware Name:", malware_definition)
+                                else:
+                                    print("Clean file.")
                         else:
                             print("Clean file.")
 
-                        print(f"Nearest similarity: {nearest_similarity}")
+                        print(f"Nearest malicious similarity: {nearest_malicious_similarity}")
+                        print(f"Nearest benign similarity: {nearest_benign_similarity}")
                         print()
-
-                        # Flag files with similarity equal to or above the threshold as malicious
-                        if nearest_similarity >= threshold:
-                            print("File similarity is equal to or above the threshold. Flagging as malicious.")
-                            print()
-                            is_malicious = True
 
                     except pefile.PEFormatError:
                         print(f"File {file_path} is not a valid PE file.")
 
         print("Scan completed.")
+        return total_files_scanned, malicious_files_detected
 
     except Exception as e:
         print(f"An error occurred while scanning folder {folder_path}: {e}")
+        return total_files_scanned, malicious_files_detected
 def main():
     try:
         print("Loading data...")
 
-        json_file = 'malicious_file_names.json'
-        numeric_file = 'malicious_numeric.pkl'
+        malicious_json_file = 'malicious_file_names.json'
+        malicious_numeric_file = 'malicious_numeric.pkl'
+        benign_numeric_file = 'benign_numeric.pkl'
 
-        folder_path = input("Enter the path of the folder to scan: ").strip()
-        if not os.path.exists(folder_path):
-            print("Error: Folder does not exist.")
-            return
+        total_scanned = 0
+        malicious_detected = 0
 
-        malicious_file_names, malicious_numeric_features = load_malicious_data(json_file, numeric_file)
+        while True:
+            folder_path = input("Enter the path of the folder to scan: ").strip()
+            if not os.path.exists(folder_path):
+                print("Error: Folder does not exist.")
+                continue
 
-        print("Malicious file information loaded successfully.")
+            malicious_file_names, malicious_numeric_features = load_malicious_data(malicious_json_file, malicious_numeric_file)
+            benign_numeric_features = joblib.load(benign_numeric_file)
 
-        print("Scanning folder...")
-        scan_folder(folder_path, malicious_file_names, malicious_numeric_features)
+            print("Malicious and benign file information loaded successfully.")
+
+            print("Scanning folder...")
+            total, detected = scan_folder(folder_path, malicious_file_names, malicious_numeric_features, benign_numeric_features)
+            total_scanned += total
+            malicious_detected += detected
+
+            detection_rate = (malicious_detected / total_scanned) * 100 if total_scanned > 0 else 0
+            print(f"Detection Rate: {detection_rate:.2f}%")
+
+            rescan = input("Do you want to scan another folder? (yes/no): ").strip().lower()
+            if rescan != "yes":
+                break
 
     except FileNotFoundError:
         print("Error: Could not find required files for scanning.")
