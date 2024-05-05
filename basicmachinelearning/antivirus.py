@@ -90,7 +90,7 @@ def check_signature(file_path):
             return 'Valid'
     except Exception as e:
         print(f"An error occurred while checking signature for {file_path}: {e}")
-        return 'Malicious'
+        return 'NotSigned'
 def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, threshold=0.8):
     """Scan a folder for malicious activity"""
     try:
@@ -101,9 +101,15 @@ def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, t
                 file_path = os.path.join(root, file)
                 if os.path.isfile(file_path):
                     try:
-                        if not check_signature(file_path):
+                        signature_status = check_signature(file_path)
+                        if signature_status == 'Malicious':
                             print(f"File: {file_path}")
                             print("Invalid Signature. Flagging as malicious.")
+                            print()
+                            continue
+                        elif signature_status == 'Valid':
+                            print(f"File: {file_path}")
+                            print("Signature is valid. Skipping scan.")
                             print()
                             continue
 
