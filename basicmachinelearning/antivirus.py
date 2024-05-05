@@ -6,13 +6,7 @@ import os
 import numpy as np
 import pandas as pd
 import pefile
-from sklearn.ensemble import RandomForestClassifier
 import subprocess
-sys.modules["sklearn.tree.tree"] = sklearn.tree
-sys.modules["sklearn.ensemble.weight_boosting"] = sklearn.ensemble
-sys.modules["sklearn.ensemble.forest"] = sklearn.ensemble
-sys.modules["sklearn.svm.classes"] = sklearn.svm
-sys.modules["sklearn.neighbors.classification"] = sklearn.neighbors
 sys.modules['sklearn.externals.joblib'] = joblib
 def extract_infos(file_path, rank=None):
     """Extract information about file"""
