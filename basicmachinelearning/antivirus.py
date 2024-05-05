@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pefile
 from sklearn.ensemble import RandomForestClassifier
+import subprocess
 sys.modules["sklearn.tree.tree"] = sklearn.tree
 sys.modules["sklearn.ensemble.weight_boosting"] = sklearn.ensemble
 sys.modules["sklearn.ensemble.forest"] = sklearn.ensemble
@@ -62,13 +63,12 @@ def extract_numeric_features(file_path, rank=None):
         print(f"An error occurred while processing {file_path}: {e}")
         
     return res
-def calculate_similarity(features1, features2, threshold=0.9):
+def calculate_similarity(features1, features2, threshold=0.8):
     """Calculate similarity between two dictionaries of features"""
     common_keys = set(features1.keys()) & set(features2.keys())
     matching_keys = sum(1 for key in common_keys if features1[key] == features2[key])
     similarity = matching_keys / max(len(features1), len(features2))
-    return similarity >= threshold
-
+    return similarity
 def load_malicious_data(json_file, numeric_file):
     """Load malicious file names and numeric features from JSON and pickle files"""
     with open(json_file, 'r') as f:
@@ -77,18 +77,36 @@ def load_malicious_data(json_file, numeric_file):
     malicious_numeric_features = joblib.load(numeric_file)
     
     return malicious_file_names, malicious_numeric_features
-
-def scan_folder(folder_path, malicious_file_names, malicious_numeric_features):
+def check_signature(file_path):
+    """Check if a file has a valid digital signature using PowerShell"""
+    try:
+        result = subprocess.run(['powershell', 'Get-AuthenticodeSignature', '-FilePath', file_path], capture_output=True, text=True)
+        output = result.stdout
+        if 'NotSigned' in output:
+            return 'NotSigned'
+        elif 'NotTrusted' in output or 'HashMismatch' in output or 'UnknownError' in output:
+            return 'Malicious'
+        else:
+            return 'Valid'
+    except Exception as e:
+        print(f"An error occurred while checking signature for {file_path}: {e}")
+        return 'Malicious'
+def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, threshold=0.8):
     """Scan a folder for malicious activity"""
     try:
         print(f"Scanning folder: {folder_path}")
-        scan_results = []
 
         for root, _, files in os.walk(folder_path):
             for file in files:
                 file_path = os.path.join(root, file)
                 if os.path.isfile(file_path):
                     try:
+                        if not check_signature(file_path):
+                            print(f"File: {file_path}")
+                            print("Invalid Signature. Flagging as malicious.")
+                            print()
+                            continue
+
                         pe = pefile.PE(file_path)
                         
                         file_info = extract_infos(file_path)
@@ -102,33 +120,44 @@ def scan_folder(folder_path, malicious_file_names, malicious_numeric_features):
                         malware_rank = None
                         malware_definition = "Benign"  # Default
 
+                        nearest_similarity = 0
+
                         for features, info in zip(malicious_numeric_features, malicious_file_names):
                             rank = info['numeric_tag']
                             definition = info.get('malware_definition', "Unknown")
-                            if calculate_similarity(file_numeric_features, features):
+                            similarity = calculate_similarity(file_numeric_features, features)
+                            if similarity > nearest_similarity:
+                                nearest_similarity = similarity
+                            if similarity >= threshold:
                                 is_malicious = True
                                 malware_rank = rank
                                 malware_definition = info['file_name']
                                 break
 
-                        scan_results.append((file_path, is_malicious, malware_rank, malware_definition))
+                        print(f"File: {file_path}")
+                        if is_malicious:
+                            print("Malicious activity detected.")
+                            print("Malware Rank:", malware_rank)
+                            print("Malware Name:", malware_definition)
+                        else:
+                            print("Clean file.")
+                        
+                        print(f"Nearest similarity: {nearest_similarity}")
+                        print()
+
+                        # Flag files with similarity equal to or above the threshold as malicious
+                        if nearest_similarity >= threshold:
+                            print("File similarity is equal to or above the threshold. Flagging as malicious.")
+                            print()
+                            is_malicious = True
 
                     except pefile.PEFormatError:
                         print(f"File {file_path} is not a valid PE file.")
 
         print("Scan completed.")
 
-        for file_path, result, malware_rank, malware_definition in scan_results:
-            if result:
-                print(f"Malicious activity detected in: {file_path}")
-                print("Malware Rank:", malware_rank)
-                print("Malware Name:", malware_definition)
-            else:
-                print(f"Clean file: {file_path}")
-
     except Exception as e:
         print(f"An error occurred while scanning folder {folder_path}: {e}")
-
 def main():
     try:
         print("Loading data...")
