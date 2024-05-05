@@ -7,18 +7,18 @@ import numpy as np
 import pandas as pd
 import pefile
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics.pairwise import cosine_similarity
 sys.modules["sklearn.tree.tree"] = sklearn.tree
 sys.modules["sklearn.ensemble.weight_boosting"] = sklearn.ensemble
 sys.modules["sklearn.ensemble.forest"] = sklearn.ensemble
 sys.modules["sklearn.svm.classes"] = sklearn.svm
 sys.modules["sklearn.neighbors.classification"] = sklearn.neighbors
 sys.modules['sklearn.externals.joblib'] = joblib
+
 def extract_infos(file_path, rank=None):
     """Extract information about file"""
     file_name = os.path.basename(file_path)
     if rank is not None:
-        return {'file_name': file_name, 'numeric_tag': rank, 'malware_definition': f"Malware definition for file {file_name}"}
+        return {'file_name': file_name, 'numeric_tag': rank}
     else:
         return {'file_name': file_name}
 
@@ -62,7 +62,23 @@ def extract_numeric_features(file_path, rank=None):
         print(f"An error occurred while processing {file_path}: {e}")
         
     return res
-def scan_folder(folder_path, numeric_features, malicious_file_names):
+def calculate_similarity(features1, features2, threshold=0.9):
+    """Calculate similarity between two dictionaries of features"""
+    common_keys = set(features1.keys()) & set(features2.keys())
+    matching_keys = sum(1 for key in common_keys if features1[key] == features2[key])
+    similarity = matching_keys / max(len(features1), len(features2))
+    return similarity >= threshold
+
+def load_malicious_data(json_file, numeric_file):
+    """Load malicious file names and numeric features from JSON and pickle files"""
+    with open(json_file, 'r') as f:
+        malicious_file_names = json.load(f)
+    
+    malicious_numeric_features = joblib.load(numeric_file)
+    
+    return malicious_file_names, malicious_numeric_features
+
+def scan_folder(folder_path, malicious_file_names, malicious_numeric_features):
     """Scan a folder for malicious activity"""
     try:
         print(f"Scanning folder: {folder_path}")
@@ -72,89 +88,69 @@ def scan_folder(folder_path, numeric_features, malicious_file_names):
             for file in files:
                 file_path = os.path.join(root, file)
                 if os.path.isfile(file_path):
-                    print(f"Scanning file: {file_path}")
                     try:
+                        pe = pefile.PE(file_path)
+                        
+                        file_info = extract_infos(file_path)
                         file_numeric_features = extract_numeric_features(file_path)
-                        if not file_numeric_features:
-                            print(f"Cannot extract numeric features from the file {file_path}.")
+                        
+                        if not file_info:
+                            print(f"Cannot extract info from the file {file_path}.")
                             continue
 
-                        print("Extracted Features:", file_numeric_features)
-
-                        # Ensure consistent feature dimensions
-                        file_features = {key: file_numeric_features.get(key, 0) for key in numeric_features[0].keys()}
-
-                        max_similarity = 0
+                        is_malicious = False
                         malware_rank = None
-                        for features in numeric_features:
-                            similarity = cosine_similarity([list(features.values())], [list(file_features.values())])[0][0]
-                            if similarity > max_similarity:
-                                max_similarity = similarity
-                                if 'numeric_tag' in features:
-                                    malware_rank = features['numeric_tag']
+                        malware_definition = "Benign"  # Default
 
-                        if max_similarity > 0.9 and malware_rank is not None:  # Adjust this threshold as needed
-                            # Find the info associated with the rank from the JSON file
-                            malware_info = next((info for info in malicious_file_names if info['numeric_tag'] == malware_rank), None)
-                            if malware_info:
-                                malware_definition = malware_info.get('malware_definition', f"Malware with rank {malware_rank}")
-                                scan_results.append((file_path, True, malware_definition))
-                            else:
-                                scan_results.append((file_path, True, f"Malware with rank {malware_rank}"))
-                        else:
-                            scan_results.append((file_path, False, None))
+                        for features, info in zip(malicious_numeric_features, malicious_file_names):
+                            rank = info['numeric_tag']
+                            definition = info.get('malware_definition', "Unknown")
+                            if calculate_similarity(file_numeric_features, features):
+                                is_malicious = True
+                                malware_rank = rank
+                                malware_definition = info['file_name']
+                                break
 
-                    except Exception as e:
-                        print(f"An error occurred while scanning file {file_path}: {e}")
+                        scan_results.append((file_path, is_malicious, malware_rank, malware_definition))
+
+                    except pefile.PEFormatError:
+                        print(f"File {file_path} is not a valid PE file.")
 
         print("Scan completed.")
-        
-        # Print results after the loop
-        for file_path, result, malware_definition in scan_results:
+
+        for file_path, result, malware_rank, malware_definition in scan_results:
             if result:
                 print(f"Malicious activity detected in: {file_path}")
-                print("Malware Definition:", malware_definition)
+                print("Malware Rank:", malware_rank)
+                print("Malware Name:", malware_definition)
             else:
-                print(f"No malicious activity detected in: {file_path}")
+                print(f"Clean file: {file_path}")
 
     except Exception as e:
         print(f"An error occurred while scanning folder {folder_path}: {e}")
-def load_data():
-    """Load malicious file names and numeric features"""
-    try:
-        with open('malicious_file_names.json', 'r') as f:
-            malicious_files_info = json.load(f)
-        with open('numeric_features.pkl', 'rb') as f:
-            numeric_features = joblib.load(f)
-        return malicious_files_info, numeric_features
-    except Exception as e:
-        print(f"An error occurred while loading data: {e}")
-        return None, None
-
-def validate_folder(folder_path):
-    """Validate if the provided folder path exists"""
-    return os.path.exists(folder_path)
 
 def main():
     try:
         print("Loading data...")
-        malicious_files_info, numeric_features = load_data()
-        if malicious_files_info is None or numeric_features is None:
-            print("Error: Failed to load data.")
-            return
-
-        print("Data loaded successfully.")
-
+        
+        json_file = 'malicious_file_names.json'
+        numeric_file = 'malicious_numeric.pkl'
+        
         folder_path = input("Enter the path of the folder to scan: ").strip()
-        if not validate_folder(folder_path):
-            print("Error: Invalid folder path.")
+        if not os.path.exists(folder_path):
+            print("Error: Folder does not exist.")
             return
+        
+        malicious_file_names, malicious_numeric_features = load_malicious_data(json_file, numeric_file)
+
+        print("Malicious file information loaded successfully.")
 
         print("Scanning folder...")
-        scan_folder(folder_path, numeric_features, malicious_files_info)
+        scan_folder(folder_path, malicious_file_names, malicious_numeric_features)
 
+    except FileNotFoundError:
+        print("Error: Could not find required files for scanning.")
     except Exception as e:
         print(f"An error occurred: {e}")
-
 if __name__ == "__main__":
     main()

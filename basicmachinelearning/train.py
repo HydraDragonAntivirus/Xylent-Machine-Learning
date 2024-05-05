@@ -19,7 +19,7 @@ def extract_infos(file_path, rank=None):
     """Extract information about file"""
     file_name = os.path.basename(file_path)
     if rank is not None:
-        return {'file_name': file_name, 'numeric_tag': rank, 'malware_definition': f"Malware definition for file {file_name}"}
+        return {'file_name': file_name, 'numeric_tag': rank}
     else:
         return {'file_name': file_name}
 
@@ -63,42 +63,58 @@ def extract_numeric_features(file_path, rank=None):
         print(f"An error occurred while processing {file_path}: {e}")
         
     return res
-
-def load_files(folder):
-    """Load files and extract their information"""
+def load_malicious_files(folder):
+    """Load malicious files and extract their information"""
     files_info = []
     numeric_features = []
-    numeric_tag = 1
-    for i, (root, _, files) in enumerate(os.walk(folder, topdown=True)):
+    rank = 1  # Initialize rank
+    
+    for root, _, files in os.walk(folder, topdown=True):
         for file in files:
             if file.endswith('.vir'):
                 file_path = os.path.join(root, file)
-                if 'malicious' in folder:
-                    file_info = extract_infos(file_path, rank=numeric_tag)
-                    numeric_tag += 1
-                else:
-                    file_info = extract_infos(file_path)
-                numeric_info = extract_numeric_features(file_path, rank=file_info.get('numeric_tag'))
+                file_info = extract_infos(file_path, rank=rank)
+                numeric_info = extract_numeric_features(file_path, rank=rank)
+                if file_info:
+                    files_info.append(file_info)
+                if numeric_info:
+                    numeric_features.append(numeric_info)
+                rank += 1  # Increment rank for next file
+                
+    return files_info, numeric_features
+def load_benign_files(folder):
+    """Load benign files and extract their information"""
+    files_info = []
+    numeric_features = []
+    for root, _, files in os.walk(folder, topdown=True):
+        for index, file in enumerate(files, start=1):
+            file_path = os.path.join(root, file)
+            if os.path.isfile(file_path):
+                file_info = extract_infos(file_path, rank=index)
+                numeric_info = extract_numeric_features(file_path, rank=index)
                 if file_info:
                     files_info.append(file_info)
                 if numeric_info:
                     numeric_features.append(numeric_info)
     return files_info, numeric_features
-
 def main():
     # Load data
-    malicious_files_info, malicious_numeric_features = load_files('datamaliciousorder')
-    benign_files_info, benign_numeric_features = load_files('data2')
+    malicious_files_info, malicious_numeric_features = load_malicious_files('datamaliciousorder')
+    benign_files_info, benign_numeric_features = load_benign_files('data2')
 
     # Save malicious file names in JSON
     with open('malicious_file_names.json', 'w') as f:
         json.dump(malicious_files_info, f)
 
-    # Save numeric features as pickle file
-    with open('numeric_features.pkl', 'wb') as f:
-        joblib.dump(malicious_numeric_features + benign_numeric_features, f)
+    # Save numeric features for malicious files as pickle file
+    with open('malicious_numeric.pkl', 'wb') as f:
+        joblib.dump(malicious_numeric_features, f)
 
-    print("Files information saved in JSON. Numeric features saved in pickle.")
+    # Save numeric features for benign files as pickle file
+    with open('benign_numeric.pkl', 'wb') as f:
+        joblib.dump(benign_numeric_features, f)
+
+    print("Files information saved in JSON. Numeric features saved separately for malicious and benign files.")
 
 if __name__ == "__main__":
     main()
