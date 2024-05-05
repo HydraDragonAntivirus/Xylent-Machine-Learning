@@ -101,20 +101,12 @@ def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, t
                 file_path = os.path.join(root, file)
                 if os.path.isfile(file_path):
                     try:
-                        signature_status = check_signature(file_path)
-                        if signature_status == 'Malicious':
-                            print(f"File: {file_path}")
-                            print("Invalid Signature. Flagging as malicious.")
-                            print()
-                            continue
-                        elif signature_status == 'Valid':
-                            print(f"File: {file_path}")
-                            print("Signature is valid. Skipping scan.")
-                            print()
+                        # Check if the file is a PE file
+                        pe = pefile.PE(file_path)
+                        if not pe:
+                            print(f"File {file_path} is not a valid PE file. Skipping.")
                             continue
 
-                        pe = pefile.PE(file_path)
-                        
                         file_info = extract_infos(file_path)
                         file_numeric_features = extract_numeric_features(file_path)
                         
