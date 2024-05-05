@@ -14,7 +14,6 @@ sys.modules["sklearn.ensemble.forest"] = sklearn.ensemble
 sys.modules["sklearn.svm.classes"] = sklearn.svm
 sys.modules["sklearn.neighbors.classification"] = sklearn.neighbors
 sys.modules['sklearn.externals.joblib'] = joblib
-
 def extract_infos(file_path, rank=None):
     """Extract information about file"""
     file_name = os.path.basename(file_path)
@@ -22,7 +21,6 @@ def extract_infos(file_path, rank=None):
         return {'file_name': file_name, 'numeric_tag': rank}
     else:
         return {'file_name': file_name}
-
 def extract_numeric_features(file_path, rank=None):
     """Extract numeric features of a file using pefile"""
     res = {}
@@ -61,9 +59,9 @@ def extract_numeric_features(file_path, rank=None):
             res['numeric_tag'] = rank
     except Exception as e:
         print(f"An error occurred while processing {file_path}: {e}")
-        
+
     return res
-def calculate_similarity(features1, features2, threshold=0.8):
+def calculate_similarity(features1, features2, threshold=0.76):
     """Calculate similarity between two dictionaries of features"""
     common_keys = set(features1.keys()) & set(features2.keys())
     matching_keys = sum(1 for key in common_keys if features1[key] == features2[key])
@@ -73,13 +71,17 @@ def load_malicious_data(json_file, numeric_file):
     """Load malicious file names and numeric features from JSON and pickle files"""
     with open(json_file, 'r') as f:
         malicious_file_names = json.load(f)
-    
+
     malicious_numeric_features = joblib.load(numeric_file)
-    
+
     return malicious_file_names, malicious_numeric_features
 def check_signature(file_path):
     """Check if a file has a valid digital signature using PowerShell"""
     try:
+        pe = pefile.PE(file_path)
+        if not pe:
+            return 'NotPE'
+
         result = subprocess.run(['powershell', 'Get-AuthenticodeSignature', '-FilePath', file_path], capture_output=True, text=True)
         output = result.stdout
         if 'NotSigned' in output:
@@ -91,7 +93,7 @@ def check_signature(file_path):
     except Exception as e:
         print(f"An error occurred while checking signature for {file_path}: {e}")
         return 'NotSigned'
-def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, threshold=0.8):
+def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, threshold=0.76):
     """Scan a folder for malicious activity"""
     try:
         print(f"Scanning folder: {folder_path}")
@@ -107,9 +109,15 @@ def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, t
                             print(f"File {file_path} is not a valid PE file. Skipping.")
                             continue
 
+                        signature_status = check_signature(file_path)
+
+                        # Only scan NotSigned files
+                        if signature_status != 'NotSigned':
+                            continue
+
                         file_info = extract_infos(file_path)
                         file_numeric_features = extract_numeric_features(file_path)
-                        
+
                         if not file_info:
                             print(f"Cannot extract info from the file {file_path}.")
                             continue
@@ -139,7 +147,7 @@ def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, t
                             print("Malware Name:", malware_definition)
                         else:
                             print("Clean file.")
-                        
+
                         print(f"Nearest similarity: {nearest_similarity}")
                         print()
 
@@ -159,15 +167,15 @@ def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, t
 def main():
     try:
         print("Loading data...")
-        
+
         json_file = 'malicious_file_names.json'
         numeric_file = 'malicious_numeric.pkl'
-        
+
         folder_path = input("Enter the path of the folder to scan: ").strip()
         if not os.path.exists(folder_path):
             print("Error: Folder does not exist.")
             return
-        
+
         malicious_file_names, malicious_numeric_features = load_malicious_data(json_file, numeric_file)
 
         print("Malicious file information loaded successfully.")
@@ -179,5 +187,6 @@ def main():
         print("Error: Could not find required files for scanning.")
     except Exception as e:
         print(f"An error occurred: {e}")
+
 if __name__ == "__main__":
     main()
