@@ -87,6 +87,7 @@ def check_signature(file_path):
     except Exception as e:
         print(f"An error occurred while checking signature for {file_path}: {e}")
         return 'NotSigned'
+
 def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, benign_numeric_features, threshold=0.76):
     """Scan a folder for malicious activity"""
     total_files_scanned = 0
@@ -146,20 +147,20 @@ def scan_folder(folder_path, malicious_file_names, malicious_numeric_features, b
                         total_files_scanned += 1
                         if is_malicious:
                             malicious_files_detected += 1
-                            if nearest_benign_similarity >= 0.76:
-                                print("Flagged as malicious but more similar to benign features. Marking as clean.")
+                            if nearest_benign_similarity >= 0.86:
+                                print(f"File {file_path} flagged as malicious but more similar to benign features. Marking as clean.")
                                 print("Nearest malicious similarity:", nearest_malicious_similarity)
                                 print("Nearest benign similarity:", nearest_benign_similarity)
                                 print("Clean file.")
                             else:
                                 if nearest_malicious_similarity >= threshold:
-                                    print("Malicious activity detected.")
+                                    print(f"File {file_path} is malicious.")
                                     print("Malware Rank:", malware_rank)
                                     print("Malware Name:", malware_definition)
                                 else:
-                                    print("Clean file.")
+                                    print(f"File {file_path} is clean.")
                         else:
-                            print("Clean file.")
+                            print(f"File {file_path} is clean.")
 
                         print(f"Nearest malicious similarity: {nearest_malicious_similarity}")
                         print(f"Nearest benign similarity: {nearest_benign_similarity}")
